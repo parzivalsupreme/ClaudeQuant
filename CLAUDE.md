@@ -7,8 +7,7 @@ into the run folder, following the conventions below exactly so results are comp
 
 ## Market & constraints (edit these to yours)
 - Market: BTC/USDT, timeframe 1H
-- Data: `data/*.csv` with columns timestamp, open, high, low, close, volume
-  (`data/sample_btc_1h.csv` is SYNTHETIC - replace with real exchange data before trusting anything)
+- Data: `data/*.csv` with columns timestamp, open, high, low, close, volume (real exchange data)
 - Capital: 10,000 USDT; max risk per trade 1%
 - Fees 0.1% per side, slippage 0.05% per side
 - Python with pandas, numpy, matplotlib (install with pip if missing)

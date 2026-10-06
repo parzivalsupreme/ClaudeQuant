@@ -19,9 +19,8 @@ the same rules and runs stay comparable.
 
 ## Setup
 
-1. `pip install -r requirements.txt` (the agents' generated code uses pandas, numpy, matplotlib).
+1. `pip install pandas numpy matplotlib` (used by the code the agents write).
 2. Put OHLCV data in `data/` (columns `timestamp, open, high, low, close, volume`).
-   `data/sample_btc_1h.csv` is **synthetic** - results on it mean nothing.
 3. Edit the market / constraints at the top of `CLAUDE.md`.
 
 ## Run it
