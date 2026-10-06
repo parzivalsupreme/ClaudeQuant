@@ -1,0 +1,29 @@
+{
+  "params": {
+    "fast": 20,
+    "slow": 100
+  },
+  "lookahead_violations": [],
+  "in_sample": {
+    "total_return": -0.12431743575487098,
+    "cagr": -0.18763351282647112,
+    "max_drawdown": -0.3675317577017193,
+    "sharpe": -0.0355638211767958,
+    "win_rate": 0.3142857142857143,
+    "profit_factor": 0.9438886280186765,
+    "n_trades": 35,
+    "avg_trade": -0.0014786538772177313,
+    "exposure": 0.46
+  },
+  "out_of_sample": {
+    "total_return": 0.17561599250933835,
+    "cagr": 0.8056962051049459,
+    "max_drawdown": -0.4462028929259063,
+    "sharpe": 1.218432992880543,
+    "win_rate": 0.25,
+    "profit_factor": 1.6120114928131164,
+    "n_trades": 12,
+    "avg_trade": 0.02415220029993942,
+    "exposure": 0.43291666666666667
+  }
+}
