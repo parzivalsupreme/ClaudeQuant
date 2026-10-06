@@ -1,30 +1,31 @@
 # claudeQuant
 
-A purely agentic trading research pipeline for Claude Code. There is no shared code library:
-agents propose trading hypotheses, a skeptic picks the best, they get turned into exact rules,
-and the agents **write and run their own backtests, Monte Carlo stress tests and walk-forward
-tests**. The best possible outcome is "PAPER TRADE". It never places orders.
+A multi-agent trading research pipeline for Claude Code. Agents propose trading hypotheses,
+a skeptic picks the best, they get turned into exact rules and backtested, and then a
+**Monte Carlo stress test** and a validator try to kill them. The best possible outcome is
+"PAPER TRADE". It never places orders.
 
 ```
 /research mean reversion on 1H
 
 hypothesis-generator -> skeptic -> strategy-spec -> backtester -> monte-carlo -> validator -> SUMMARY.md
-   (10 ideas)          (top 2)     (exact rules)   (writes +     (writes + runs  (code review,
-                                                    runs backtest) 5 MC tests)     walk-forward, verdict)
+   (10 ideas)          (top 2)     (exact rules)   (IS / OOS)   (5 MC tests)   (verdict)
 ```
-
-Consistency comes from `CLAUDE.md`, not from code: it pins down fill timing, costs, what counts as a
-trade, how metrics are computed and a lookahead self-check, so every agent-written backtest follows
-the same rules and runs stay comparable.
 
 ## Setup
 
-1. `pip install pandas numpy matplotlib` (used by the code the agents write).
-2. Put OHLCV data in `data/` (columns `timestamp, open, high, low, close, volume`).
-3. Edit the market / constraints at the top of `CLAUDE.md`.
+```bash
+pip install -r requirements.txt
+python scripts/make_sample_data.py      # synthetic demo data -> data/sample_btc_1h.csv
+python -m pytest -q tests
+```
+
+Then put real OHLCV data in `data/` (columns `timestamp, open, high, low, close, volume`) and edit the
+market / constraints at the top of `CLAUDE.md`. **The sample data is synthetic: results on it mean nothing.**
 
 ## Run it
 
+Interactive:
 ```
 claude
 > /research                          # full pipeline
@@ -37,41 +38,56 @@ Headless (cron / Task Scheduler):
 claude -p "/research" --allowedTools "Read,Write,Edit,Bash,Glob,Grep,WebSearch,Task"
 ```
 
-Every run leaves an audit trail in `research/<date>-<slug>/` - the ideas, the critique, the specs,
-all generated code, results, charts and verdicts. Past verdicts are fed back to the hypothesis
-generator so it stops re-proposing dead ideas.
-
-## Agents
-
-| Agent | Writes code? | Job |
-|---|---|---|
-| hypothesis-generator | no | 10 hypotheses with economic rationale and exact signals |
-| skeptic | no | scores them, picks top 2, names the likely false discovery |
-| strategy-spec | no | unambiguous rules, <= 4 parameters |
-| backtester | yes | `strategy_<n>.py` + `backtest_<n>.py`, in-sample / out-of-sample results |
-| monte-carlo | yes | `mc_<n>/montecarlo.py`: the five stress tests below + verdict |
-| validator | yes | code review, `validate_<n>.py` (sensitivity, walk-forward, regimes), final verdict |
+Every run writes an audit trail to `research/<date>-<slug>/`: `hypotheses.md`, `selection.md`,
+`spec_<n>.md`, `strategy_<n>.py`, `results_<n>.json`, `equity_<n>.png`, `mc_<n>/`,
+`validation_<n>.json`, `verdict_<n>.md`, `SUMMARY.md`. Past verdicts are fed back to the
+hypothesis generator so it stops re-proposing dead ideas.
 
 ## Monte Carlo stress test
 
+```bash
+python scripts/stress_test.py --data data/sample_btc_1h.csv \
+    --strategy research/<run>/strategy_1.py:signal --sample out --out research/<run>/mc_1
+```
+
 | # | Test | What it answers |
 |---|------|-----------------|
-| 1 | Trade-order shuffle | Same trades, random order: how bad could the drawdown have been from sequencing alone? |
-| 2 | Trade bootstrap | Confidence intervals, P(loss), risk of ruin, return without the best 5% of trades. |
-| 3 | Execution stress | 1-3x slippage, 10% missed trades, late entries. Does the edge survive real execution? |
-| 4 | Synthetic price paths | Block-bootstrapped histories with the same volatility character. Tied to one history? |
-| 5 | Permutation test | Shuffled bars destroy all patterns. p-value that the edge is noise. |
+| 1 | **Trade-order shuffle** | Same trades, random order. How bad could the drawdown have been just from the sequence? |
+| 2 | **Trade bootstrap** | Resample trades with replacement: confidence intervals for return / drawdown, probability of loss, risk of ruin, and return with the best 5% of trades removed (outlier dependence). |
+| 3 | **Execution stress** | Re-run with 1-3x slippage, 10% of trades randomly missed, and random 1-bar late entries. |
+| 4 | **Synthetic price paths** | Block-bootstrap the bars into new histories with the same volatility character and re-run the strategy. Is the result tied to one exact history? |
+| 5 | **Permutation test** | Shuffle bars to destroy every real pattern and re-run. p-value = share of noise runs that matched the real Sharpe. |
 
-Verdict: `REJECT` (any hard failure), `NEEDS WORK` (warnings) or `PASS MONTE CARLO`.
+Output: `montecarlo.md` (report + verdict), `montecarlo.json`, `montecarlo.png` (charts).
+The rule-based verdict is `REJECT` (any hard failure), `NEEDS WORK` (warnings) or `PASS MONTE CARLO`.
 
-## Trade-offs of going fully agentic
+The stress test aborts if the strategy's signals change when future bars are removed (lookahead).
 
-- Each run regenerates its backtest code, so it costs more tokens and time than calling a fixed script.
-- Agent-written code can contain bugs. Mitigations built in: the backtester tests its engine on a
-  hand-computed example, the monte-carlo agent sanity-checks its simulations, and the validator
-  reviews all code and auto-rejects on any bug.
+## Layout
+
+```
+.claude/agents/      hypothesis-generator, skeptic, strategy-spec, backtester, monte-carlo, validator
+.claude/commands/    /research, /stress-test
+CLAUDE.md            market, costs and rules every agent follows
+quant/               backtest engine, metrics, montecarlo, validation (walk-forward, sensitivity, lookahead)
+scripts/             backtest.py, stress_test.py, validate.py, make_sample_data.py
+```
+
+## Writing a strategy
+
+```python
+PARAMS = {"fast": 20, "slow": 100}                     # <= 4 params
+GRID = {"fast": [10, 20, 40], "slow": [50, 100, 200]}  # used by walk-forward
+
+def signal(df, fast=20, slow=100):
+    # position in [-1, 1] per bar, from data up to this bar's close.
+    # Don't shift it: the engine fills on the next bar's open.
+    return (df.close.rolling(fast).mean() > df.close.rolling(slow).mean()).astype(float)
+```
+
+Costs default to 0.1% fee + 0.05% slippage per side.
 
 ## Disclaimer
 
-Research tool, not financial advice. Most strategies fail after costs; passing Monte Carlo is
-necessary, not sufficient. Paper trade before risking money.
+Research tool, not financial advice. Most strategies fail after costs; a passing Monte Carlo test
+is necessary, not sufficient. Paper trade before risking money.
